@@ -1,0 +1,47 @@
+[package]
+name = "qurl-core"
+version = "0.1.0"
+edition = "2018"
+authors = ["Nikolay Korotkov <https://github.com/Niskigvan>"]
+license = "MIT"
+readme = "../README.md"
+description = "Like curl, but with `jq` interactive data processing for XML/JSON/YAML/CSV"
+keywords = ["http", "request", "client", "jq"]
+categories = ["web-programming::http-client", "wasm"]
+[[bin]]
+name = "cli"
+[features]
+default = []
+wasm = []
+[dependencies]
+async-std = "1.10"
+serde = "1"
+serde_json = "1"
+serde_yaml = "0.8"
+quick-xml = "0.22"
+xmltojson = "0.1.1"
+jaq-core = "0.1"
+fuzzy-matcher = "0.3"
+lazy_static = "1.4.0"
+rayon = "1.5.1"
+crossterm = "0.22.1"
+rand = "0.8.4"
+futures-lite = "*"
+futures-util = "*"
+log = "*"
+anyhow = "*"
+backtrace = "*"
+schemars = "0.8.6"
+tui = { version = "0.16", default-features = false, features = ['crossterm'] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+clap = "3.0.0-beta.4"
+surf = { version = "2.3", default-features = false, features = [
+    "h1-client",
+    "middleware-logger",
+    "encoding",
+] }
+[dependencies.syntect]
+version = "4.6.0"
+# default-features = false
+features = ["parsing", "dump-load", "dump-create", "yaml-load", "regex-fancy"]
