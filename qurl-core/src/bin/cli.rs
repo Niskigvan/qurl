@@ -16,7 +16,7 @@ use crossterm::{
 };
 
 use qurl_core::{
-    state::State,
+    state::Glob,
     ui::util::SMALL_TERMINAL_HEIGHT,
     utils::events::{
         io::IoEvent,
@@ -33,12 +33,7 @@ use async_std::{fs, io::BufReader, path::PathBuf};
 use rayon::iter::IndexedParallelIterator;
 use serde_json::{self, json};
 use std::{borrow::Borrow, cell::{Cell, RefCell}, cmp::{max, min}, io::{self, stdout}, panic::{self, PanicInfo}, sync::mpsc::{self, Receiver, Sender}, thread, time::{self, Duration, SystemTime}};
-use syntect::{
-    easy::{HighlightFile, HighlightLines},
-    highlighting::{Style as SyntStyle, ThemeSet},
-    parsing::SyntaxSet,
-    util::LinesWithEndings,
-};
+use syntect::{dumps::from_binary, easy::{HighlightFile, HighlightLines}, highlighting::{Style as SyntStyle, ThemeSet}, parsing::SyntaxSet, util::LinesWithEndings};
 
 use tui::{
     backend::{Backend, CrosstermBackend},
@@ -137,12 +132,16 @@ fn main() -> Result<()> {
 
     task::block_on(async {
         let (sync_io_tx, sync_io_rx) = mpsc::channel::<IoEvent>();
-        let app = Arc::new(Mutex::new(State::new(sync_io_tx)));
+        let app = Arc::new(Mutex::new(Glob::new(sync_io_tx)));
 
         let cloned_app = Arc::clone(&app);
         // std::thread::spawn(move || {
         //     start_input(sync_io_rx, &app);
         // });
+        {
+            app.lock().await.jq_input=". | contains(\"never\")".to_string();
+        }
+        
         thread::spawn(move || task::block_on(start_input(sync_io_rx, &app)));
         // The UI must run in the "main" thread
         start_ui(opts, &cloned_app).await?;
@@ -152,8 +151,10 @@ fn main() -> Result<()> {
     })
 }
 
-async fn start_input(sync_io_rx: Receiver<IoEvent>, app: &Arc<Mutex<State>>) -> Result<()> {
-    let json_txt = fs::read_to_string("assets/egko_subway.json").await.unwrap();
+async fn start_input(sync_io_rx: Receiver<IoEvent>, app: &Arc<Mutex<Glob>>) -> Result<()> {
+    
+    let json_txt = fs::read_to_string(
+        format!("{}/../testdata/egko_subway.json", env!("CARGO_MANIFEST_DIR"))).await.unwrap();
     let json_obj =
         serde_json::from_str(&json_txt[..]).unwrap_or(json!({"__ERROR__":"Failed to parse input"}));
     let json_txt_pretty = serde_json::to_string_pretty(&json_obj).unwrap();
@@ -162,44 +163,30 @@ async fn start_input(sync_io_rx: Receiver<IoEvent>, app: &Arc<Mutex<State>>) -> 
     let theme = &ts.themes["base16-ocean.dark"];
     let syntax = ps.find_syntax_by_extension("json").unwrap();
     let mut h = HighlightLines::new(syntax, theme);
-    let mut l = 0;
     for line in LinesWithEndings::from(&json_txt_pretty[..]) {
-        l += 1;
-        let ranges: Vec<(SyntStyle, &str)> = h.highlight(line, &ps);
-        let mut spans: Vec<Span<'static>> = vec![];
-        for &(ref style, text) in ranges.iter() {
-            spans.push(Span::styled(
-                text.replace(" ", "·")
-                    .replace("\t", "⇥   ")
-                    .replace(" ", "·")
-                    .replace("\r", "␍")
-                    .replace("\n", "␊"),
-                Style::default()
-                    /* .bg(Color::Rgb(
-                        style.background.r,
-                        style.background.g,
-                        style.background.b,
-                    )) */
-                    .fg(Color::Rgb(
-                        style.foreground.r,
-                        style.foreground.g,
-                        style.foreground.b,
-                    )),
-            ));
-        }
+        let mut ranges: Vec<Vec<(SyntStyle, String)>> = vec![h.highlight(line, &ps)
+        .into_iter().map(|v|(v.0,
+            v.1.replace(" ", "·")
+                .replace("\t", "⇥   ")
+                .replace(" ", "·")
+                .replace("\r", "␍")
+                .replace("\n", "␊").to_owned(),
+        )).collect()];
 
         let mut app = app.lock().await;
         app.inp_data
             .formatted_lines
-            .push(Spans::from(spans.to_owned()));
+            .append(&mut ranges);
         // if (l >= 70) {
         //     break;
         // }
         //print!("\n{:^6}│{}", l,escaped);
     }
     {
+        
         let mut app = app.lock().await;
-        app.inp_data.loaded=true;
+        app.inp_data.formatted_loaded=true;
+        app.inp_data.original_loaded=true;
     }
     task::sleep(Duration::from_millis(250)).await;
     {
@@ -209,7 +196,7 @@ async fn start_input(sync_io_rx: Receiver<IoEvent>, app: &Arc<Mutex<State>>) -> 
     
     Ok(())
 }
-async fn start_ui(opts: Opts, app: &Arc<Mutex<State>>) -> Result<()> {
+async fn start_ui(opts: Opts, app: &Arc<Mutex<Glob>>) -> Result<()> {
     // Terminal initialization
 
     let backend = CrosstermBackend::new(stdout());
@@ -219,8 +206,6 @@ async fn start_ui(opts: Opts, app: &Arc<Mutex<State>>) -> Result<()> {
     let events = UiEvents::new(opts.tick_rate);
 
     // play music on, if not send them to the device selection view
-
-    let mut is_first_render = true;
 
     let mut mouse_pos = (0u16, 0u16);
     if let Ok(size) = terminal.backend().size() {
@@ -293,7 +278,7 @@ async fn start_ui(opts: Opts, app: &Arc<Mutex<State>>) -> Result<()> {
                     .border_style(
                         Style::default()
                             .fg(Color::DarkGray)
-                            .bg(Color::Rgb(0x2b, 0x30, 0x3b)),
+                            /* .bg(Color::Rgb(0x2b, 0x30, 0x3b)) */,
                     );
                 
                 f.render_widget(block, b_chunks[0]);
@@ -302,17 +287,34 @@ async fn start_ui(opts: Opts, app: &Arc<Mutex<State>>) -> Result<()> {
                     lines: ((cont.scroll.0)..(cont.scroll.0+(f.size().height-5)))
                     .map(|n|Spans::from(n.to_string())).collect()
                 })
-                    .style(Style::default().bg(Color::Rgb(0x2b, 0x30, 0x3b)));
+                    .style(Style::default()/* .bg(Color::Rgb(0x2b, 0x30, 0x3b)) */);
                 f.render_widget(paragraph, l_chunks[0]);
 
+                
                 let text = Text {
                     lines:lines.iter()
                         .skip(cont.scroll.0 as usize).take((f.size().height-5)  as usize)
-                        .map(|v| v.clone()).collect()
+                        .map(|v| Spans(v.iter().map(|v|Span {
+                            content: v.1.clone().into(),
+                            style: Style::default()
+                            /* .bg(Color::Rgb(
+                                style.background.r,
+                                style.background.g,
+                                style.background.b,
+                            )) */
+                            .fg(Color::Rgb(
+                                v.0.foreground.r,
+                                v.0.foreground.g,
+                                v.0.foreground.b,
+                            )),
+                            }
+                            
+                            ).collect())
+                        ).collect()
                 };
                 let paragraph = Paragraph::new(text)
                     .scroll((0,cont.scroll.1))
-                    .style(Style::default().bg(Color::Rgb(0x2b, 0x30, 0x3b)));
+                    .style(Style::default()/* .bg(Color::Rgb(0x2b, 0x30, 0x3b)) */);
                 f.render_widget(paragraph, l_chunks[1]);
 
                 let block = Block::default()
@@ -326,14 +328,11 @@ async fn start_ui(opts: Opts, app: &Arc<Mutex<State>>) -> Result<()> {
                     .border_style(
                         Style::default()
                             .fg(Color::DarkGray)
-                            .bg(Color::Rgb(0x2b, 0x30, 0x3b)),
+                            /* .bg(Color::Rgb(0x2b, 0x30, 0x3b)) */,
                     );
-                let text = Text {
-                        lines: lines.clone(),
-                    };
                 let paragraph = Paragraph::new(Text::from(app.jq_input.clone()))
                         .block(block)
-                        .style(Style::default().bg(Color::Rgb(0x2b, 0x30, 0x3b)));
+                        .style(Style::default()/* .bg(Color::Rgb(0x2b, 0x30, 0x3b)) */);
                 f.render_widget(paragraph, chunks[0]);
                 /* match current_route.active_block {
                 ActiveBlock::HelpMenu => {
@@ -459,13 +458,9 @@ async fn start_ui(opts: Opts, app: &Arc<Mutex<State>>) -> Result<()> {
                 break;
             }
         }
-        if (_events.len() > 0) {
+        if _events.len() > 0 {
             let mut app = app.lock().await;
             app.on_input(&_events);
-        }
-        if (is_first_render) {
-            _events.push(Mod::Clean(Key::Unknown));
-            is_first_render = false;
         }
         // Delay spotify request until first render, will have the effect of improving
         // startup speed

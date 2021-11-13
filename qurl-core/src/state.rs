@@ -7,13 +7,13 @@ use crate::utils::events::{
     },
     ui::UiEvent,
 };
-
-use std::sync::mpsc::Sender;
+use async_trait::async_trait;
+use std::{cell::RefCell, sync::mpsc::Sender};
 
 use async_std::{
+    future::Future,
     io::{prelude::BufReadExt, Lines},
     sync::{Arc, Mutex, MutexGuard},
-    task,
 };
 use std::cmp::{max, min};
 use syntect::highlighting::{Style as SyntStyle, ThemeSet};
@@ -35,7 +35,7 @@ impl Default for DataFmt {
 pub struct Data {
     pub format: DataFmt,
     pub original_lines: Vec<String>,
-    pub formatted_lines: Vec<Vec<(SyntStyle, &'static str)>>,
+    pub formatted_lines: Vec<Vec<(SyntStyle, String)>>,
     pub values: Vec<serde_json::Value>,
     pub scroll: (u16, u16),
     pub original_loaded: bool,
@@ -44,7 +44,7 @@ pub struct Data {
 }
 
 #[derive(Clone, Debug)]
-pub struct State {
+pub struct Glob {
     // input: Option<Arc<Read>>,
     // output: Option<Arc<Write>>,
     io_tx: Option<Sender<IoEvent>>,
@@ -59,9 +59,9 @@ pub struct State {
     pub jq_input: String,
     pub pause: bool,
 }
-impl Default for State {
+impl Default for Glob {
     fn default() -> Self {
-        State {
+        Glob {
             // input: None,
             // output: None,
             io_tx: None,
@@ -79,9 +79,9 @@ impl Default for State {
     }
 }
 
-impl State {
+impl Glob {
     pub fn new(io_tx: Sender<IoEvent>) -> Self {
-        State {
+        Glob {
             io_tx: Some(io_tx),
             ..Default::default()
         }
@@ -167,6 +167,22 @@ impl State {
         // }
     }
 }
-trait StateWriter {
-    fn mutate(self, cb: Fn(State));
+/* #[async_trait]
+pub trait StateWriter
+
+{
+    async fn mutate<R>(&self, cb: R) where  R: FnOnce(&mut MutexGuard<Glob + 'static>);
 }
+#[async_trait]
+impl StateWriter for Arc<Mutex<Glob>>
+{
+    #[inline]
+    #[track_caller]
+    async mutate<R>(&self, cb: R) where  R: FnOnce(&mut MutexGuard<State + 'static>){
+        let d = RefCell::new(6);
+        let mut st = self.lock().await;
+
+        //cb(&mut st);
+        //st.pause = false;
+    }
+} */

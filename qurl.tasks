@@ -1,0 +1,19 @@
+
+TODO: 
+    Logic:
+        ☐ Add schema generation for input
+        ☐ Write code more like State Tree patterns
+            ☐ Create state trait with read and mutations clusure @started(21-11-13 03:20)
+            ☐ Make all processing as threaded actions
+            ☐ Make all ui events as actions
+            ☐ Make all ui components recreation and render as sidefect
+        ☐ YAML support
+        ☐ XML support
+        ☐ XLSX support
+    UI:
+        ☐ Refactore ui to use components
+        ☐ Add interaction
+        ☐ Implement code minimap for code view
+    Query input:
+        ☐ Syntax highlight for query
+        ☐ Autocompletion

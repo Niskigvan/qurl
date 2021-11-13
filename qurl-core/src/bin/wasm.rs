@@ -16,7 +16,7 @@ use crossterm::{
 };
 
 use qurl_core::{
-    state::State,
+    state::Glob,
     ui::util::SMALL_TERMINAL_HEIGHT,
     utils::events::{
         io::IoEvent,
@@ -142,7 +142,7 @@ fn main() -> Result<()> {
 
     task::block_on(async {
         let (sync_io_tx, sync_io_rx) = mpsc::channel::<IoEvent>();
-        let app = Arc::new(Mutex::new(State::new(sync_io_tx)));
+        let app = Arc::new(Mutex::new(Glob::new(sync_io_tx)));
 
         let cloned_app = Arc::clone(&app);
         // std::thread::spawn(move || {
@@ -157,7 +157,7 @@ fn main() -> Result<()> {
     })
 }
 
-async fn start_input(sync_io_rx: Receiver<IoEvent>, app: &Arc<Mutex<State>>) -> Result<()> {
+async fn start_input(sync_io_rx: Receiver<IoEvent>, app: &Arc<Mutex<Glob>>) -> Result<()> {
     let json_txt = fs::read_to_string("assets/egko_subway.json").await.unwrap();
     let json_obj =
         serde_json::from_str(&json_txt[..]).unwrap_or(json!({"__ERROR__":"Failed to parse input"}));
@@ -206,7 +206,7 @@ async fn start_input(sync_io_rx: Receiver<IoEvent>, app: &Arc<Mutex<State>>) -> 
     }
     Ok(())
 }
-async fn start_ui(opts: Opts, app: &Arc<Mutex<State>>) -> Result<()> {
+async fn start_ui(opts: Opts, app: &Arc<Mutex<Glob>>) -> Result<()> {
     // Terminal initialization
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
