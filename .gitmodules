@@ -70,3 +70,22 @@
 [submodule "assets/syntaxes/02_Extra/jq"]
 	path = assets/syntaxes/02_Extra/jq
 	url = https://github.com/zogwarg/SublimeJQ.git
+[submodule "assets/syntaxes/01_Packages"]
+	path = assets/syntaxes/01_Packages
+	url = https://github.com/sublimehq/Packages/
+[submodule "assets/syntaxes/02_Extra/TOML"]
+	path = assets/syntaxes/02_Extra/TOML
+	url = https://github.com/jasonwilliams/sublime_toml_highlighting
+[submodule "assets/syntaxes/02_Extra/Docker"]
+	path = assets/syntaxes/02_Extra/Docker
+	url = https://github.com/asbjornenge/Docker.tmbundle
+[submodule "assets/syntaxes/02_Extra/INI"]
+	path = assets/syntaxes/02_Extra/INI
+	url = https://github.com/clintberry/sublime-text-2-ini
+[submodule "assets/syntaxes/02_Extra/Protobuf"]
+	path = assets/syntaxes/02_Extra/Protobuf
+	url = https://github.com/VcamX/protobuf-syntax-highlighting.git
+	branch = master
+[submodule "assets/syntaxes/02_Extra/Jsonnet"]
+	path = assets/syntaxes/02_Extra/Jsonnet
+	url = https://github.com/gburiola/sublime-jsonnet-syntax.git
