@@ -4,6 +4,14 @@ TODO:
         ☐ Add schema generation for input
         ☐ Write code more like State Tree patterns
             ☐ Create state trait with read and mutations clusure @started(21-11-13 03:20)
+                ☐ Make multithread ready async store like Mobx
+                    ✔ Store with one big nested struct State @done(21-11-16 07:09)
+                    ✔ Multiple parallel action executers (dispatch<A:Enum>(action:A), multiple on_action), each executre can mutate state and return events @done(21-11-16 07:11)
+                    ✔ Simple parallel all events at once watcher @done(21-11-16 07:15)
+                    ☐ Mobx When like watcher
+                    ☐ Mobx When->Promise like watcher
+                    ☐ Mobx Effect like watcher
+                    ☐ Remove redundant effects calls
             ☐ Make all processing as threaded actions
             ☐ Make all ui events as actions
             ☐ Make all ui components recreation and render as sidefect

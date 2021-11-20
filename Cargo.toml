@@ -1,5 +1,5 @@
 [workspace]
-members = ["qurl-core"]
+members = ["crates/*"]
 
 
 [profile.dev.package."*"]

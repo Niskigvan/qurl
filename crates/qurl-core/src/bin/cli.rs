@@ -16,7 +16,7 @@ use crossterm::{
 };
 
 use qurl_core::{
-    state::Glob,
+    app::App,
     ui::util::SMALL_TERMINAL_HEIGHT,
     utils::events::{
         io::IoEvent,
@@ -25,7 +25,7 @@ use qurl_core::{
             Mod::{self, Alt, Any, Clean, Ctrl, Shift},
             Mouse,
         },
-        ui::{UiEvent, UiEvents},
+        term::{UiEvent, UiEvents},
     },
 };
 
@@ -132,7 +132,7 @@ fn main() -> Result<()> {
 
     task::block_on(async {
         let (sync_io_tx, sync_io_rx) = mpsc::channel::<IoEvent>();
-        let app = Arc::new(Mutex::new(Glob::new(sync_io_tx)));
+        let app = Arc::new(Mutex::new(App::new(sync_io_tx)));
 
         let cloned_app = Arc::clone(&app);
         // std::thread::spawn(move || {
@@ -151,7 +151,7 @@ fn main() -> Result<()> {
     })
 }
 
-async fn start_input(sync_io_rx: Receiver<IoEvent>, app: &Arc<Mutex<Glob>>) -> Result<()> {
+async fn start_input(sync_io_rx: Receiver<IoEvent>, app: &Arc<Mutex<App>>) -> Result<()> {
     
     let json_txt = fs::read_to_string(
         format!("{}/../testdata/egko_subway.json", env!("CARGO_MANIFEST_DIR"))).await.unwrap();
@@ -191,12 +191,12 @@ async fn start_input(sync_io_rx: Receiver<IoEvent>, app: &Arc<Mutex<Glob>>) -> R
     task::sleep(Duration::from_millis(250)).await;
     {
         let mut app = app.lock().await;
-        app.pause=true;
+        app.changed=false;
     }
     
     Ok(())
 }
-async fn start_ui(opts: Opts, app: &Arc<Mutex<Glob>>) -> Result<()> {
+async fn start_ui(opts: Opts, app: &Arc<Mutex<App>>) -> Result<()> {
     // Terminal initialization
 
     let backend = CrosstermBackend::new(stdout());
@@ -214,30 +214,26 @@ async fn start_ui(opts: Opts, app: &Arc<Mutex<Glob>>) -> Result<()> {
     };
     let delay = time::Duration::from_millis(opts.tick_rate/10u64);
     let mut now = time::Instant::now();
-    let mut frame_time = now.elapsed();
     let mut _events: Vec<Mod> = vec![];
     let mut loader_i=0;
     let loader_glyph="⣾⣽⣻⢿⡿⣟⣯⣷".to_string();
+    let mut running={app.lock().await.running};
     //let wait=
     ///////////////
     /////////////////
     /* let (text_tx, text_rx) = mpsc::channel();
     std::thread::spawn(move || task::block_on(async { start_input(text_tx).await })); */
-    'main: loop {
-        if (now.elapsed() < delay) {
+    while running {
+        if now.elapsed() < delay {
             thread::sleep(delay - now.elapsed());
         }
 
         now = time::Instant::now();
         
-        let mut pause=true;
-        {
-            let app=app.lock().await;
-            pause=app.pause
-        }
+        let need_render={ app.lock().await.changed};
         
         /* let current_route = app.get_current_route(); */
-        if _events.len() > 0 || !pause{
+        if _events.len() > 0 || need_render{
             let app = app.lock().await;
             terminal.draw(|mut f| {
                 loader_i=(loader_i+1)%8;
@@ -364,7 +360,7 @@ async fn start_ui(opts: Opts, app: &Arc<Mutex<Glob>>) -> Result<()> {
             // Put the cursor back inside the input box
             terminal.backend_mut().execute(MoveTo(
                 cursor_offset + app.input_cursor_position,
-                cursor_offset,
+                app.size.height+cursor_offset,
             ))?;
         }
 
@@ -394,32 +390,13 @@ async fn start_ui(opts: Opts, app: &Arc<Mutex<Glob>>) -> Result<()> {
                 UiEvent::Input(key) => {
                     _events.push(key);
                     match key {
-                        Ctrl(Key::Char('q')) => break 'main,
+                        
                         /* Any(Key::MouseDown(Mouse::Left, x, y)) => {
                             mpos = (x, y);
                         }, */
                         Any(Key::MouseMove(x, y)) => {
                             mouse_pos = (x, y);
                         }
-
-                        // Clean(Key::MouseScroll(..))
-                        // | Alt(Key::MouseScroll(..))
-                        // | Shift(Key::MouseScroll(..))
-                        // | Ctrl(Key::MouseScroll(..))
-                        // | Any(Key::MouseScroll(..)) => {
-                        //     if _events
-                        //         .iter()
-                        //         .filter(|ev| match ev {
-                        //             Any(Key::MouseScroll(..)) => true,
-                        //             _ => false,
-                        //         })
-                        //         .collect::<Vec<&Mod>>()
-                        //         .len()
-                        //         < 5
-                        //     {
-                        //         _events.push(key);
-                        //     }
-                        // }
                         _ => {
                             _events.push(key);
                         }
@@ -459,9 +436,12 @@ async fn start_ui(opts: Opts, app: &Arc<Mutex<Glob>>) -> Result<()> {
             }
         }
         if _events.len() > 0 {
-            let mut app = app.lock().await;
-            app.on_input(&_events);
+            app.lock().await.on_input(&_events);
         }
+        {
+            running=app.lock().await.running
+        };
+
         // Delay spotify request until first render, will have the effect of improving
         // startup speed
         /* if is_first_render {

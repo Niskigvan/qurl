@@ -9,11 +9,12 @@ description = "Like curl, but with `jq` interactive data processing for XML/JSON
 keywords = ["http", "request", "client", "jq"]
 categories = ["web-programming::http-client", "wasm"]
 [[bin]]
-name = "cli"
+name = "qurl"
 [features]
 default = []
 wasm = []
 [dependencies]
+async-store = { path = "../async-store", version = "*" }
 async-std = "1.10"
 async-trait = "*"
 serde = "1"

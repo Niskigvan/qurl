@@ -1,4 +1,3 @@
-use crate::utils::events::key::{Key, Mod, Mouse};
 use crossterm::event;
 use std::{
     sync::mpsc,
@@ -6,28 +5,17 @@ use std::{
     time::{Duration, Instant},
 };
 use tui::layout::Rect;
-/// An occurred event.
-pub enum UiEvent<I> {
-    /// An input event occurred.
-    Input(I),
-    /// An tick event occurred.
-    Tick,
-    /// Resize event occurred.
-    Resize(Rect),
-}
 
-/// A small event handler that wrap crossterm input and tick event. Each event
-/// type is handled in its own thread and returned to a common `Receiver`
-pub struct UiEvents {
+pub struct TermEventsHandler {
     pub tick_rate: Duration,
     rx: mpsc::Receiver<UiEvent<Mod>>,
     // Need to be kept around to prevent disposing the sender side.
     _tx: mpsc::Sender<UiEvent<Mod>>,
 }
 
-impl UiEvents {
+impl TermEventsHandler {
     /// Constructs an new instance of `Events` with the default config.
-    pub fn new(tick_rate: u64) -> UiEvents {
+    pub fn new(tick_rate: u64) -> TermEventsHandler {
         let tick_rate = Duration::from_millis(tick_rate);
         let (tx, rx) = mpsc::channel();
         let event_tx = tx.clone();
@@ -73,7 +61,7 @@ impl UiEvents {
             }
         });
 
-        UiEvents {
+        TermEventsHandler {
             rx,
             _tx: tx,
             tick_rate,
@@ -85,8 +73,8 @@ impl UiEvents {
         self.rx.recv()
     }
 }
-impl Default for UiEvents {
+impl Default for TermEventsHandler {
     fn default() -> Self {
-        UiEvents::new(250)
+        TermEventsHandler::new(250)
     }
 }

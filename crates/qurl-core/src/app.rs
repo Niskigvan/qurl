@@ -5,7 +5,7 @@ use crate::utils::events::{
         Mod::{self, Alt, Any, Clean, Ctrl, Shift},
         Mouse,
     },
-    ui::UiEvent,
+    term::UiEvent,
 };
 use async_trait::async_trait;
 use std::{cell::RefCell, sync::mpsc::Sender};
@@ -18,6 +18,7 @@ use async_std::{
 use std::cmp::{max, min};
 use syntect::highlighting::{Style as SyntStyle, ThemeSet};
 use tui::{layout::Rect, text::Spans};
+
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug)]
 pub enum DataFmt {
     JSON,
@@ -44,44 +45,49 @@ pub struct Data {
 }
 
 #[derive(Clone, Debug)]
-pub struct Glob {
+pub struct App {
     // input: Option<Arc<Read>>,
     // output: Option<Arc<Write>>,
     io_tx: Option<Sender<IoEvent>>,
 
     pub inp_data: Data,
     pub out_data: Data,
+    pub schema_data: Data,
 
     pub size: Rect,
-    pub help_menu_max_lines: u32,
     pub input_cursor_position: u16,
 
     pub jq_input: String,
-    pub pause: bool,
+    pub changed: bool,
+    pub running: bool,
 }
-impl Default for Glob {
+impl Default for App {
     fn default() -> Self {
-        Glob {
+        App {
             // input: None,
             // output: None,
             io_tx: None,
 
             inp_data: Data::default(),
             out_data: Data::default(),
+            schema_data: Data {
+                format: DataFmt::SCHEMA,
+                ..Default::default()
+            },
 
             size: Rect::default(),
-            help_menu_max_lines: 10,
             input_cursor_position: 0,
 
             jq_input: ".".to_string(),
-            pause: false,
+            changed: true,
+            running: true,
         }
     }
 }
 
-impl Glob {
+impl App {
     pub fn new(io_tx: Sender<IoEvent>) -> Self {
-        Glob {
+        App {
             io_tx: Some(io_tx),
             ..Default::default()
         }
@@ -97,10 +103,6 @@ impl Glob {
         // }
     }
     pub fn on_resize(&mut self, size: Rect) {
-        /* app.help_menu_max_lines = 0;
-        app.help_menu_offset = 0;
-        app.help_menu_page = 0; */
-
         self.size = size;
 
         // Based on the size of the terminal, adjust the search limit.
@@ -113,20 +115,13 @@ impl Glob {
             large_search_limit,
             small_search_limit,
         )); */
-
-        // Based on the size of the terminal, adjust how many lines are
-        // displayed in the help menu
-        if self.size.height > 8 {
-            self.help_menu_max_lines = (self.size.height as u32) - 8;
-        } else {
-            self.help_menu_max_lines = 0;
-        }
     }
     pub fn on_input(&mut self, _events: &Vec<Mod>) {
         let mut cont = &mut self.inp_data;
         let max_row = cont.formatted_lines.len() as i32;
         for evt in _events {
             match evt {
+                Ctrl(Key::Char('q')) => self.running = false,
                 Clean(Key::MouseScroll(pos, x, y)) => {
                     cont.scroll.0 = (cont.scroll.0 as i32 + pos).max(0).min(max_row) as u16;
                 }
@@ -167,22 +162,15 @@ impl Glob {
         // }
     }
 }
-/* #[async_trait]
-pub trait StateWriter
 
+/* fn mutate<'a, F>(app: &'a Arc<Mutex<App>>, cb: F) -> impl std::future::Future<Output = ()>
+where
+    F: FnOnce(&'a mut MutexGuard<App + 'static>),
 {
-    async fn mutate<R>(&self, cb: R) where  R: FnOnce(&mut MutexGuard<Glob + 'static>);
-}
-#[async_trait]
-impl StateWriter for Arc<Mutex<Glob>>
-{
-    #[inline]
-    #[track_caller]
-    async mutate<R>(&self, cb: R) where  R: FnOnce(&mut MutexGuard<State + 'static>){
-        let d = RefCell::new(6);
-        let mut st = self.lock().await;
-
-        //cb(&mut st);
-        //st.pause = false;
+    async move {
+        let mut st = app.lock().await;
+        cb(&mut st);
+        st.changed = true;
     }
-} */
+}
+ */
