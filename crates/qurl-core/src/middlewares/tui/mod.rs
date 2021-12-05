@@ -51,7 +51,7 @@ impl Tui {
         store
             .lock()
             .await
-            .on_action(move |state, action| {
+            .executer(move |state, action| {
                 task::spawn(async move {
                     match action {
                         AppAction::Interaction(keys) => {
@@ -92,8 +92,8 @@ impl Tui {
         store
             .lock()
             .await
-            .effect(
-                |state| Cond::becomes_true(state.need_render),
+            .reaction(
+                |state| Cond::Becomes(state.need_render, true),
                 move |state| {
                     let tui2 = tui2.clone();
                     task::spawn(async move {
@@ -111,8 +111,8 @@ impl Tui {
         store
             .lock()
             .await
-            .effect(
-                |state| Cond::becomes_false(state.running),
+            .reaction(
+                |state| Cond::Becomes(state.running, false),
                 move |state| {
                     let b = barrier2.clone();
                     task::spawn(async move {

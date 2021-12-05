@@ -23,7 +23,7 @@ fn main() {
         store
             .lock()
             .await
-            .on_action(move |state, action| {
+            .executer(move |state, action| {
                 task::spawn(async move {
                     match action {
                         Action::Increment(v) => {
@@ -41,8 +41,8 @@ fn main() {
         store
             .lock()
             .await
-            .effect(
-                |state| Cond::becomes_true(state.v > 0 && state.v % 23 == 0),
+            .reaction(
+                |state| Cond::Becomes(state.v > 0 && state.v % 23 == 0),
                 move |state| {
                     task::spawn(async move {
                         println!("{:?}  [v%23==0]", state.read().await);
@@ -54,7 +54,7 @@ fn main() {
             )
             .await;
         loop {
-            store.dispatch(Action::Increment(1));
+            store.do(Action::Increment(1));
 
             task::sleep(Duration::from_micros(8)).await;
         }

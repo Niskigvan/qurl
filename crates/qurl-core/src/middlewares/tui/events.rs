@@ -92,7 +92,7 @@ impl InteractionStream {
         key_events.append(&mut mouse_events);
         actions.push(AppAction::Interaction(key_events));
         for action in actions {
-            self.store.dispatch(action).await
+            self.store.do(action).await
         }
     }
     pub async fn run(app: AppStore) -> Result<()> {

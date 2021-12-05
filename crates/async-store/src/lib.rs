@@ -4,18 +4,23 @@ use async_std::{
     sync::{Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard},
     task::{self, JoinHandle},
 };
-use std::{any::Any, pin::Pin, process::Output, time::Duration};
+use std::{
+    any::{Any, TypeId},
+    pin::Pin,
+    process::Output,
+    time::Duration,
+};
 pub struct State<S> {
     state: Arc<RwLock<S>>,
 }
 
-pub trait ASAny: Any + PartialEq<dyn Any> {
+pub trait ASAny: Any {
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn into_any(self: Box<Self>) -> Box<dyn Any>;
 }
 
-impl<T: Any + PartialEq<dyn Any>> ASAny for T {
+impl<T: Any> ASAny for T {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -30,27 +35,28 @@ impl<T: Any + PartialEq<dyn Any>> ASAny for T {
 /// This wrapper implements PartialEq<dyn Any> which is needed to
 /// Allow MyAny to become a trait object
 ///
-
+pub type ASAnyBoxed = Box<dyn Any + Send + Sync>; //Box<dyn ASAny + Send + Sync>;
 pub enum Cond {
-    _Changed(Box<dyn ASAny + Send + Sync>),
-    _BecomesTrue(Box<dyn ASAny + Send + Sync>),
-    _BecomesFalse(Box<dyn ASAny + Send + Sync>),
+    _Changed(ASAnyBoxed),
+    _Becomes(ASAnyBoxed, ASAnyBoxed),
 }
 impl Cond {
-    /* pub fn Changed<T: 'static>(v: T) -> Cond
+    #[allow(non_snake_case)]
+    pub fn Changed<T: Sized + Any + Send + Sync>(val: T) -> Cond
     where
         T: PartialEq,
     {
-        Cond::_Changed(Box::new(EqAnyW(v)))
-    } */
-    pub fn becomes_true(v: bool) -> Cond {
-        Cond::_BecomesTrue(Box::new(EqAnyW(v)))
+        Cond::_Changed(Box::new(val))
     }
-    pub fn becomes_false(v: bool) -> Cond {
-        Cond::_BecomesFalse(Box::new(EqAnyW(v)))
+    #[allow(non_snake_case)]
+    pub fn Becomes<T: Sized + Any + Send + Sync>(val: T, expectation: T) -> Cond
+    where
+        T: PartialEq,
+    {
+        Cond::_Becomes(Box::new(val), Box::new(expectation))
     }
 }
-trait CondCorrect {}
+/* trait CondCorrect {}
 pub struct EqAnyW<T: ?Sized>(pub T);
 impl<T: 'static> PartialEq<dyn Any> for EqAnyW<T>
 where
@@ -62,7 +68,7 @@ where
             None => false,
         }
     }
-}
+} */
 
 impl<S> State<S> {
     pub fn new(s: S) -> Self {
@@ -103,10 +109,7 @@ impl<S> From<State<S>> for ReadonlyState<S> {
     }
 }
 
-pub type DisposerFn<S, A> =
-    fn(State<S>, A) -> Pin<Box<dyn Future<Output = State<S>> + Send + Sync>>;
-
-pub trait IStore<Action, S>
+/* pub trait IStore<Action, S>
 where
     S: Any,
     Action: Send + Clone + 'static,
@@ -120,24 +123,21 @@ where
     where
         T: 'static + Fn(State<S>, Action) -> JoinHandle<Option<Vec<Action>>> + Send + Sync;
     fn new(state: S) -> Arc<Mutex<Store<S, Action>>>;
-}
-
+} */
+type ReactionsVec<S, A> = Vec<(
+    Box<dyn Fn(RwLockReadGuard<S>) -> Box<dyn Any + Send + Sync> + Send + Sync>,
+    Box<dyn Fn(ReadonlyState<S>) -> JoinHandle<Option<Vec<A>>> + Send + Sync>,
+)>;
+type HandlersVec<S, A> = Vec<Box<dyn Fn(State<S>, A) -> JoinHandle<Option<Vec<A>>> + Send + Sync>>;
 pub struct Store<S, A>
 where
     S: Any,
     A: Send + Clone,
 {
     pub state: State<S>,
-    effects: Arc<
-        RwLock<
-            Vec<(
-                Box<dyn Fn(RwLockReadGuard<S>) -> Cond + Send + Sync>,
-                Box<dyn Fn(ReadonlyState<S>) -> JoinHandle<Option<Vec<A>>> + Send + Sync>,
-            )>,
-        >,
-    >,
-    disposers:
-        Arc<RwLock<Vec<Box<dyn Fn(State<S>, A) -> JoinHandle<Option<Vec<A>>> + Send + Sync>>>>,
+    reactions: Arc<RwLock<ReactionsVec<S, A>>>,
+    handlers:
+        Arc<RwLock<HandlersVec<S, A>>>,
     action: core::marker::PhantomData<A>,
 }
 
@@ -146,21 +146,21 @@ where
     S: Any,
     A: Send + Clone,
 {
-    pub async fn effect<C, T>(&mut self, cond: C, effect: T)
+    pub async fn reaction<C, T>(&mut self, cond: C, effect: T)
     where
         C: 'static + Fn(RwLockReadGuard<S>) -> Cond + Send + Sync,
         T: 'static + Fn(ReadonlyState<S>) -> JoinHandle<Option<Vec<A>>> + Send + Sync,
     {
-        self.effects
+        self.reactions
             .write()
             .await
             .push((Box::new(cond), Box::new(effect)));
     }
-    pub async fn on_action<T>(&mut self, listener: T)
+    pub async fn handler<T>(&mut self, listener: T)
     where
         T: 'static + Fn(State<S>, A) -> JoinHandle<Option<Vec<A>>> + Send + Sync,
     {
-        self.disposers.write().await.push(Box::new(listener))
+        self.handlers.write().await.push(Box::new(listener))
     }
     /* pub async fn wait_until<C>(&mut self, cond: C)
     where
@@ -187,8 +187,8 @@ where
     fn default() -> Self {
         Store::<S, A> {
             state: State::new(S::default()),
-            effects: Arc::new(RwLock::new(Vec::new())),
-            disposers: Arc::new(RwLock::new(Vec::new())),
+            reactions: Arc::new(RwLock::new(Vec::new())),
+            handlers: Arc::new(RwLock::new(Vec::new())),
             action: core::marker::PhantomData,
         }
     }
@@ -198,28 +198,28 @@ where
     S: Any + 'static,
     A: Send + Clone + 'static,
 {
-    fn dispatch(self, action: A) -> JoinHandle<()>;
+    fn do(self, action: A) -> JoinHandle<()>;
 }
 impl<S, A> ArcStore<S, A> for &Arc<Mutex<Store<S, A>>>
 where
     S: Default + Sync + Send + 'static,
     A: Send + Clone + 'static,
 {
-    fn dispatch(self, action: A) -> JoinHandle<()> {
+    fn do(self, action: A) -> JoinHandle<()> {
         let store = self.clone();
-        dispatch(store, action)
+        do(store, action)
     }
 }
 
-pub fn dispatch<S, A>(store: Arc<Mutex<Store<S, A>>>, action: A) -> JoinHandle<()>
+pub fn do<S, A>(store: Arc<Mutex<Store<S, A>>>, action: A) -> JoinHandle<()>
 where
     S: Default + Sync + Send + 'static,
     A: Send + Clone + 'static,
 {
     task::spawn(async move {
         let sl = store.lock().await;
-        let disposers = sl.disposers.clone();
-        let effects = sl.effects.clone();
+        let disposers = sl.handlers.clone();
+        let effects = sl.reactions.clone();
         let state = sl.state.clone();
         drop(sl);
         let mut actions: Vec<A> = vec![];
@@ -242,43 +242,37 @@ where
 
         let mut tasks: Vec<JoinHandle<Option<Vec<A>>>> = vec![];
         for (i, e) in effects.read().await.iter().enumerate() {
-            let v_new: Cond = e.0(state.clone().read().await);
+            let v_new = e.0(state.clone().read().await);
             match eff_old.get(i) {
-                Some(Cond::_BecomesTrue(v_old)) => match v_new {
-                    Cond::_BecomesTrue(v_new) => {
-                        let _v = v_new.as_any().downcast_ref::<EqAnyW<bool>>();
-                        let _o = v_old.as_any().downcast_ref::<EqAnyW<bool>>();
-                        match _v {
-                            Some(&EqAnyW(true)) => match _o {
-                                Some(&EqAnyW(false)) => {
-                                    tasks.push(e.1(state.clone().into()));
+                Some(Cond::_Becomes(v_old, ex)) => match v_new {
+                    Cond::_Becomes(v_new, ex) => {
+                        let _ex = ex.as_any().downcast_ref::<bool>();
+                        let _v = v_new.as_any().downcast_ref::<bool>();
+                        let _o = v_old.as_any().downcast_ref::<bool>();
+                        if _ex.is_some()
+                            && _o.is_some()
+                            && _v.is_some()
+                            && _o.unwrap() != _ex.unwrap()
+                            && _v.unwrap() == _ex.unwrap()
+                        {
+                            tasks.push(e.1(state.clone().into()));
+                        }
+                        /* match _v {
+                            Some(&true) => match _o {
+                                Some(&false) => {
+                                    tasks.push(ef(state.clone().into()));
                                 }
                                 _ => {}
                             },
                             _ => {}
-                        }
-                    }
-                    _ => {}
-                },
-                Some(Cond::_BecomesFalse(v_old)) => match v_new {
-                    Cond::_BecomesFalse(v_new) => {
-                        let _v = v_new.as_any().downcast_ref::<EqAnyW<bool>>();
-                        let _o = v_old.as_any().downcast_ref::<EqAnyW<bool>>();
-                        match _v {
-                            Some(&EqAnyW(false)) => match _o {
-                                Some(&EqAnyW(true)) => {
-                                    tasks.push(e.1(state.clone().into()));
-                                }
-                                _ => {}
-                            },
-                            _ => {}
-                        }
+                        } */
                     }
                     _ => {}
                 },
                 _ => {}
             }
         }
+
         for t in tasks {
             let actions_ = t.await;
             if let Some(actions_) = actions_ {
@@ -287,7 +281,7 @@ where
         }
         let mut tasks: Vec<JoinHandle<()>> = vec![];
         for action in actions {
-            tasks.push(dispatch(store.clone(), action));
+            tasks.push(do(store.clone(), action));
         }
     })
 }
