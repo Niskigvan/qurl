@@ -1,4 +1,4 @@
-% qurl
+% qurl [WIP]
 
 Like curl, but with interactive data processing with `jq`[^jq][^jaq] for JSON/JSON-SEQ/XML/YAML/CSV/XLSX and `fuzzy` search with `skim`[^skim] (like `fzf`[^fzf]).
 
